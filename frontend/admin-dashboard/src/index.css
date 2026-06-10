@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: "Inter", system-ui, sans-serif; background: #F8FAFC; color: #0F172A; -webkit-font-smoothing: antialiased; }
+}
+
+@layer utilities {
+  .skeleton { background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%); background-size: 200% 100%; animation: shimmer 1.6s infinite; }
+  .gradient-text { background: linear-gradient(135deg, #2563EB, #7C3AED); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .card { @apply bg-white rounded-2xl shadow-sm border border-slate-100; }
+  .btn-primary { @apply inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white font-semibold px-4 py-2 rounded-xl transition-all duration-200 text-sm; }
+  .btn-outline { @apply inline-flex items-center gap-2 border border-slate-200 hover:border-brand-300 text-slate-700 hover:text-brand-700 font-semibold px-4 py-2 rounded-xl transition-all text-sm bg-white; }
+  .btn-danger { @apply inline-flex items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold px-4 py-2 rounded-xl transition-all text-sm border border-rose-200; }
+  .input { @apply w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all; }
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold; }
+  .sidebar-link { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150; }
+  .sidebar-link.active { @apply bg-brand-50 text-brand-700; }
+  .sidebar-link:not(.active) { @apply text-slate-600 hover:bg-slate-100 hover:text-slate-900; }
+}
