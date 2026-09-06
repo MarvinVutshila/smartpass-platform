@@ -1,6 +1,9 @@
+// src/services/api.js
 import axios from "axios";
 
-const API = axios.create({ baseURL: "http://localhost:8000/api" });
+const API = axios.create({
+  baseURL: "http://localhost:8000/api",
+});
 
 API.interceptors.request.use((config) => {
   const token = sessionStorage.getItem("access_token");
@@ -21,5 +24,10 @@ API.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+// Auth endpoints (optional helpers)
+export const forgotPassword = (email) => API.post("/auth/forgot-password", { email });
+export const resetPassword = (token, newPassword) =>
+  API.post("/auth/reset-password", { token, new_password: newPassword });
 
 export default API;
