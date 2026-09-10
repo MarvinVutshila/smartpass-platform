@@ -33,27 +33,70 @@ class CheckinRequest(BaseModel):
 
 # ─── Public endpoints ─────────────────────────────────────────────────
 @router.get("/me", response_model=list[TicketOut])
-def get_my_tickets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_my_tickets(
+    debug: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all tickets for the authenticated user.
+    If debug=true, returns detailed info about tickets and user.
+    """
+    # Query tickets for this user
     tickets = db.query(Ticket).filter(Ticket.user_id == current_user.id).order_by(Ticket.issued_at.desc()).all()
+
+    # ─── Debug mode ────────────────────────────────────────────────
+    if debug:
+        # Get all tickets in the system (to see if any exist at all)
+        all_tickets = db.query(Ticket).all()
+        return {
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "ticket_count": len(tickets),
+            "tickets": [
+                {
+                    "id": t.id,
+                    "public_ticket_id": t.public_ticket_id,
+                    "event_id": t.event_id,
+                    "user_id": t.user_id,
+                    "status": t.status,
+                }
+                for t in tickets
+            ],
+            "all_tickets_in_db": [
+                {
+                    "id": t.id,
+                    "user_id": t.user_id,
+                    "public_ticket_id": t.public_ticket_id,
+                    "event_id": t.event_id,
+                }
+                for t in all_tickets
+            ],
+        }
+
+    # ─── Normal response (list of TicketOut) ─────────────────────
     out = []
     for t in tickets:
         event = db.query(Event).filter(Event.id == t.event_id).first()
+        # Rebuild credential if not stored (should be stored)
         credential = t.credential if t.credential else rebuild_credential(_payload_from_ticket(t))
-        out.append(TicketOut(
-            id=t.id,
-            public_ticket_id=t.public_ticket_id,
-            order_ref=t.order_ref,
-            event_id=t.event_id,
-            event_name=event.name if event else "Unknown Event",
-            venue=event.venue if event else "TBA",
-            ticket_type=t.ticket_type,
-            status=_computed_status(t),
-            qr_image_url=_qr_data_url(credential),
-            price_paid=t.price_paid,
-            issued_at=t.issued_at,
-            expires_at=t.expires_at,
-            checked_in_at=t.checked_in_at,
-        ))
+        out.append(
+            TicketOut(
+                id=t.id,
+                public_ticket_id=t.public_ticket_id,
+                order_ref=t.order_ref,
+                event_id=t.event_id,
+                event_name=event.name if event else "Unknown Event",
+                venue=event.venue if event else "TBA",
+                ticket_type=t.ticket_type,
+                status=_computed_status(t),
+                qr_image_url=_qr_data_url(credential),
+                price_paid=t.price_paid,
+                issued_at=t.issued_at,
+                expires_at=t.expires_at,
+                checked_in_at=t.checked_in_at,
+            )
+        )
     return out
 
 @router.get("/{ticket_id}/pdf")

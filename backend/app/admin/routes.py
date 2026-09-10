@@ -1,3 +1,4 @@
+# app/admin/routes.py
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -114,7 +115,10 @@ def delete_tier(tier_id: int, admin: User = Depends(get_current_admin_user), db:
     db.commit()
     return {"message": "Tier deleted"}
 
-# ---------- Revoke / Block ----------
+# ══════════════════════════════════════════════════════════════════
+#  TICKET CONTROL (Block / Unblock / Reset Scan)
+# ══════════════════════════════════════════════════════════════════
+
 @router.post("/tickets/{ticket_id}/revoke")
 def revoke_ticket(ticket_id: int, body: dict, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
@@ -125,8 +129,9 @@ def revoke_ticket(ticket_id: int, body: dict, admin: User = Depends(get_current_
     ticket.revoked_at = datetime.utcnow()
     ticket.revoked_reason = body.get("reason", "No reason provided")
     ticket.revoked_by = admin.id
-    # Also update status? The _computed_status will treat revoked_at as revoked.
+    ticket.status = "revoked"
     db.commit()
+
     audit = AuditLog(
         public_ticket_id=ticket.public_ticket_id,
         event_id=ticket.event_id,
@@ -138,11 +143,85 @@ def revoke_ticket(ticket_id: int, body: dict, admin: User = Depends(get_current_
     db.commit()
     return {"message": f"Ticket {ticket.public_ticket_id} revoked"}
 
-# NEW: Block ticket (alias for revoke, for frontend compatibility)
+
 @router.post("/tickets/{ticket_id}/block")
 def block_ticket(ticket_id: int, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
-    """Block a ticket – same as revoke."""
+    """Block a ticket – alias for revoke."""
     return revoke_ticket(ticket_id, {"reason": "Blocked by admin"}, admin, db)
+
+
+@router.post("/tickets/{ticket_id}/unblock")
+def unblock_ticket(ticket_id: int, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    """
+    Unblock a previously revoked/blocked ticket.
+    Clears the revocation fields and sets the status back to active.
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Clear revocation data
+    ticket.revoked_at = None
+    ticket.revoked_reason = None
+    ticket.revoked_by = None
+
+    # Reset status to active (unless it was already checked in)
+    if ticket.status != "checked_in":
+        ticket.status = "active"
+
+    db.commit()
+
+    # Audit log
+    audit = AuditLog(
+        public_ticket_id=ticket.public_ticket_id,
+        event_id=ticket.event_id,
+        result="UNBLOCKED",
+        reason=f"Unblocked by admin {admin.id}",
+        scanned_by=admin.id,
+    )
+    db.add(audit)
+    db.commit()
+
+    return {"message": f"Ticket {ticket.public_ticket_id} unblocked successfully"}
+
+
+@router.post("/tickets/{ticket_id}/reset-scan")
+def reset_scan(ticket_id: int, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    """
+    Reset the scan status of a ticket so it can be scanned again.
+    Clears checked_in_at, checked_in_by, and any revocation fields.
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Clear check-in data
+    ticket.checked_in_at = None
+    ticket.checked_in_by = None
+
+    # Clear revocation data as well
+    ticket.revoked_at = None
+    ticket.revoked_reason = None
+    ticket.revoked_by = None
+
+    # Reset status
+    ticket.status = "active"
+
+    db.commit()
+
+    # Audit log
+    audit = AuditLog(
+        public_ticket_id=ticket.public_ticket_id,
+        event_id=ticket.event_id,
+        result="SCAN_RESET",
+        reason=f"Scan reset by admin {admin.id}",
+        scanned_by=admin.id,
+    )
+    db.add(audit)
+    db.commit()
+
+    return {"message": f"Ticket {ticket.public_ticket_id} scan reset successfully"}
+
 
 # ---------- Analytics ----------
 @router.get("/analytics")

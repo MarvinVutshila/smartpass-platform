@@ -18,6 +18,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import traceback
 import os
+from urllib.parse import quote  # for URL‑encoding
 
 def _payload_from_ticket(ticket: Ticket):
     from crypto_ticket import TicketPayload
@@ -30,7 +31,17 @@ def _payload_from_ticket(ticket: Ticket):
     )
 
 def _qr_data_url(credential: str) -> str:
-    qr = qrcode.make(credential)
+    """
+    Generate a QR code image (as data URL) from the credential.
+    Sanitizes the credential to avoid base64 decoding errors.
+    """
+    # 1. Clean the credential: strip whitespace, remove newlines, fix padding
+    cleaned = credential.strip().replace('\n', '').replace('\r', '')
+    # 2. Ensure base64 padding is correct
+    if len(cleaned) % 4 != 0:
+        cleaned += '=' * (4 - len(cleaned) % 4)
+    # 3. Generate QR code
+    qr = qrcode.make(cleaned)
     buf = BytesIO()
     qr.save(buf, format="PNG")
     return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
@@ -44,24 +55,41 @@ def _computed_status(ticket: Ticket) -> str:
         return "expired"
     return "active"
 
-def issue_ticket(db: Session, user: User, event: Event, ticket_type: str, price: float, tier_id: int = None):
+def issue_ticket(
+    db: Session,
+    user: User,
+    event: Event,
+    ticket_type: str,
+    price: float,
+    tier_id: int = None,
+    order_ref: str = None
+):
     expires_at = event.end_date or (event.start_date + timedelta(hours=12))
     credential, payload, credential_hash = issue_ticket_credential(
         event_id=event.id,
         valid_hours=max(1, int((expires_at - datetime.utcnow()).total_seconds() // 3600) or 1),
     )
+    # Sanitize the credential before storing
+    credential = credential.strip().replace('\n', '').replace('\r', '')
+    # Ensure proper base64 padding
+    if len(credential) % 4 != 0:
+        credential += '=' * (4 - len(credential) % 4)
+
     signed_expiry = datetime.utcfromtimestamp(payload.exp)
+
+    if order_ref is None:
+        order_ref = "SP-" + secrets.token_hex(4).upper()
 
     ticket = Ticket(
         public_ticket_id=payload.tid,
-        order_ref="SP-" + secrets.token_hex(4).upper(),
+        order_ref=order_ref,
         event_id=event.id,
         user_id=user.id,
         tier_id=tier_id,
         ticket_type=ticket_type,
         status="active",
         price_paid=price,
-        credential=credential,  # store the credential
+        credential=credential,
         credential_nonce=payload.n,
         credential_hash=credential_hash,
         issued_at=datetime.utcfromtimestamp(payload.iat),
@@ -93,8 +121,9 @@ def _build_ticket_pdf(ticket: Ticket, user: User, event: Event, credential: str)
     end_time = event.end_date.strftime("%H:%M") if event.end_date else "TBD"
     time_str = f"{start_time} - {end_time}"
 
-    # QR data: the credential itself (signed) – this will be used for verification.
-    qr_data = f"{settings.FRONTEND_URL}/verify?token={credential}"
+    # ✅ URL‑encode the credential so it's safe in a query parameter
+    encoded_credential = quote(credential)
+    qr_data = f"{settings.FRONTEND_URL}/verify?token={encoded_credential}"
 
     # Generate PDF using the premium generator
     pdf_path = f"/tmp/ticket_{ticket.id}.pdf"
@@ -149,13 +178,17 @@ def send_ticket_email(to_email: str, user: User, event: Event, ticket: Ticket, c
     except Exception:
         traceback.print_exc()
 
-# ─── NEW: Verify and audit helpers for staff check‑in ─────────────────
-
+# ─── Verify and audit helpers for staff check‑in ─────────────────
 def _verify_ticket(db: Session, credential: str):
     """
     Verify the credential signature and return (ticket, payload, error).
     error is a string if invalid, else None.
     """
+    # Sanitize incoming credential (in case it came from QR scan)
+    credential = credential.strip().replace('\n', '').replace('\r', '')
+    if len(credential) % 4 != 0:
+        credential += '=' * (4 - len(credential) % 4)
+
     try:
         payload = verify_credential_signature(credential)
     except Exception as e:
