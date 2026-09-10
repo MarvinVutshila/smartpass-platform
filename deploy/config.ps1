@@ -1,4 +1,4 @@
-﻿# SmartPass AWS Deployment — Shared Configuration
+# SmartPass AWS Deployment — Shared Configuration
 $AWS_REGION          = "us-east-1"
 $ECR_REPO_NAME       = "smartpass-backend"
 $APP_RUNNER_SERVICE  = "smartpass-backend-service"
@@ -10,9 +10,16 @@ $CF_DIST_ADMIN_NAME  = "SmartPass Admin Dashboard"
 $DB_IDENTIFIER       = "smartpass-db"
 $DB_NAME             = "smartpass"
 $DB_USER             = "smartpass_admin"
-$DB_PASSWORD         = "MarvinMakhubela@04"
 $DB_INSTANCE_CLASS   = "db.t3.micro"
 $DB_ENGINE_VERSION   = "16.4"
+
+# ─── SECRETS (from environment, never hardcoded) ─────
+$DB_PASSWORD = $env:SMARTPASS_DB_PASSWORD
+if (-not $DB_PASSWORD) {
+    Write-Host "ERROR: Set SMARTPASS_DB_PASSWORD environment variable first" -ForegroundColor Red
+    Write-Host "  Example: `$env:SMARTPASS_DB_PASSWORD = 'YourStrongPassword123!'" -ForegroundColor Yellow
+    exit 1
+}
 
 $ROOT_DIR    = Split-Path -Parent $PSScriptRoot
 $BACKEND     = Join-Path $ROOT_DIR "backend"
